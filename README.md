@@ -38,7 +38,7 @@ Run the crawler with a URL as an argument:
 cargo run -- https://example.com
 ```
 
-Images will be downloaded to the `downloads` directory.
+Images will be downloaded to the `downloads` directory. The directory will be created automatically if it doesn't exist.
 
 ## License
 
