@@ -21,7 +21,7 @@ A Rust-based web crawler that downloads JPG and GIF images from a website and it
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/christopherbunting/rusty_spider.git
+git clone https://github.com/csmb/rusty_spider.git
 cd rusty_spider
 ```
 
