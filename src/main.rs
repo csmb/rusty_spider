@@ -9,6 +9,11 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 use url::{Url, Origin};
 use futures::future::join_all;
+use std::collections::HashMap;
+
+// Size ranges in bytes
+const SMALL_SIZE: u64 = 100 * 1024;    // 100KB
+const MEDIUM_SIZE: u64 = 1024 * 1024;  // 1MB
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,12 +32,13 @@ async fn main() -> Result<()> {
     println!("Starting crawler for {}", start_url);
     println!("Images will be saved to the 'downloads' directory");
 
-    // Create downloads directory
+    // Create base downloads directory
     fs::create_dir_all("downloads").await?;
 
-    // Shared state for tracking visited URLs and downloaded images
+    // Shared state for tracking visited URLs, downloaded images, and image sizes
     let visited_urls = Arc::new(Mutex::new(std::collections::HashSet::new()));
     let downloaded_images = Arc::new(Mutex::new(std::collections::HashSet::new()));
+    let image_sizes = Arc::new(Mutex::new(HashMap::new()));
     let client = Arc::new(reqwest::Client::new());
 
     // Start crawling from the initial URL
@@ -41,6 +47,7 @@ async fn main() -> Result<()> {
         base_origin,
         visited_urls.clone(),
         downloaded_images.clone(),
+        image_sizes.clone(),
         client.clone(),
     ).await?;
 
@@ -59,6 +66,7 @@ async fn crawl_url(
     base_origin: Origin,
     visited_urls: Arc<Mutex<std::collections::HashSet<String>>>,
     downloaded_images: Arc<Mutex<std::collections::HashSet<String>>>,
+    image_sizes: Arc<Mutex<HashMap<String, (u64, Vec<u8>)>>>,
     client: Arc<reqwest::Client>,
 ) -> Result<()> {
     // Skip if we've already visited this URL
@@ -88,7 +96,7 @@ async fn crawl_url(
                 if img_url.origin() == base_origin {
                     let mut downloaded = downloaded_images.lock().await;
                     if downloaded.insert(img_url.to_string()) {
-                        download_image(&client, img_url).await?;
+                        download_image(&client, img_url, image_sizes.clone()).await?;
                     }
                 }
             }
@@ -109,6 +117,7 @@ async fn crawl_url(
                         base_origin.clone(),
                         visited_urls.clone(),
                         downloaded_images.clone(),
+                        image_sizes.clone(),
                         client.clone(),
                     ));
                 }
@@ -122,7 +131,21 @@ async fn crawl_url(
     Ok(())
 }
 
-async fn download_image(client: &Arc<reqwest::Client>, url: Url) -> Result<()> {
+fn get_size_category(size: u64) -> &'static str {
+    if size < SMALL_SIZE {
+        "small"
+    } else if size < MEDIUM_SIZE {
+        "medium"
+    } else {
+        "large"
+    }
+}
+
+async fn download_image(
+    client: &Arc<reqwest::Client>,
+    url: Url,
+    image_sizes: Arc<Mutex<HashMap<String, (u64, Vec<u8>)>>>,
+) -> Result<()> {
     println!("Downloading: {}", url);
     
     let response = client.get(url.as_str()).send().await?;
@@ -142,10 +165,40 @@ async fn download_image(client: &Arc<reqwest::Client>, url: Url) -> Result<()> {
         _ => return Ok(()), // Skip non-jpg/gif images
     };
     
-    let path = Path::new("downloads").join(format!("{}.{}", filename, extension));
+    let full_filename = format!("{}.{}", filename, extension);
+    let file_size = bytes.len() as u64;
+    
+    // Check if we have a larger version of this image
+    let mut sizes = image_sizes.lock().await;
+    if let Some((existing_size, _)) = sizes.get(&full_filename) {
+        if file_size <= *existing_size {
+            return Ok(()); // Skip if this version is smaller
+        }
+    }
+    
+    // Update the stored size and bytes
+    sizes.insert(full_filename.clone(), (file_size, bytes.to_vec()));
+    
+    // Create organized directory structure
+    let domain = url.domain().unwrap_or("unknown");
+    let size_category = get_size_category(file_size);
+    let format_dir = extension.to_string();
+    
+    let path = Path::new("downloads")
+        .join(format_dir)           // Format first (jpg/gif)
+        .join(domain)              // Then domain
+        .join(size_category)       // Then size
+        .join(&full_filename);
+    
+    // Create all necessary directories
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
     
     // Save the image
     fs::write(&path, &bytes).await?;
+    
+    println!("Saved: {} ({})", path.display(), size_category);
     
     Ok(())
 }
