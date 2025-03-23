@@ -11,11 +11,8 @@ A Rust-based web crawler that downloads JPG and GIF images from a website and it
 - Rate limiting to be respectful to servers
 - Deduplicates URLs and images
 - Shows progress and summary statistics
+- Organizes downloads by format, domain, and size categories
 
-## Requirements
-
-- Rust 2021 edition or later
-- Cargo (comes with Rust)
 
 ## Installation
 
@@ -38,7 +35,28 @@ Run the crawler with a URL as an argument:
 cargo run -- https://example.com
 ```
 
-Images will be downloaded to the `downloads` directory. The directory will be created automatically if it doesn't exist.
+Images will be downloaded to the `downloads` directory with the following organization:
+
+```
+downloads/
+├── jpg/                    # All JPG images
+│   ├── example.com/        # Grouped by domain
+│   │   ├── small/          # < 100KB
+│   │   ├── medium/         # 100KB - 1MB
+│   │   └── large/          # > 1MB
+│   └── another-site.com/
+└── gif/                    # All GIF images
+    └── example.com/
+        ├── small/
+        ├── medium/
+        └── large/
+```
+
+The crawler will:
+1. Create all necessary directories automatically
+2. Save only the highest quality version of each image
+3. Organize images by format (jpg/gif), domain, and size category
+4. Show progress as it downloads and organizes images
 
 ## License
 
