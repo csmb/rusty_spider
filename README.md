@@ -59,5 +59,4 @@ The crawler will:
 4. Show progress as it downloads and organizes images
 
 ## License
-
 MIT License 
